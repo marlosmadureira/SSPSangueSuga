@@ -1,0 +1,2 @@
+# Bloquear acesso direto ao diretório src/
+Require all denied

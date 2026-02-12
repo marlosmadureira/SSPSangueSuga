@@ -1,0 +1,92 @@
+# Proteção de segurança - Bloqueia acesso direto a arquivos sensíveis
+
+# Bloquear listagem de diretórios
+Options -Indexes
+
+# Bloquear acesso a arquivos de configuração
+<FilesMatch "^(config\.php|\.env|\.env\.example)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Bloquear acesso a scripts de administração
+<FilesMatch "^(init_db\.php|gerar_token\.php)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Bloquear acesso a arquivos do Composer
+<FilesMatch "^(composer\.json|composer\.lock|composer\.phar)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Bloquear acesso a arquivos de backup e temporários
+<FilesMatch "\.(bak|backup|old|tmp|log|sql|db)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Bloquear acesso a arquivos ocultos (começam com ponto)
+<FilesMatch "^\.">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Headers de segurança
+<IfModule mod_headers.c>
+    # Prevenir clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+    
+    # Prevenir MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # Habilitar XSS protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Política de Referrer
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    
+    # Content Security Policy básica
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self';"
+    
+    # Remover informações do servidor
+    Header unset Server
+    Header unset X-Powered-By
+    Header unset X-Powered-CMS
+</IfModule>
+
+# Desabilitar assinatura do servidor
+<IfModule mod_headers.c>
+    ServerSignature Off
+</IfModule>
+
+# Prevenir acesso a arquivos PHP em diretórios específicos via URL
+RewriteEngine On
+RewriteCond %{REQUEST_URI} ^.*/(data|src|vendor)/.*$ [NC]
+RewriteRule .* - [F,L]

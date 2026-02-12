@@ -1,0 +1,5 @@
+# Bloquear acesso direto ao diretório data/
+Require all denied
+
+# Desabilitar execução de scripts PHP
+php_flag engine off
