@@ -173,10 +173,10 @@ async def receber_lote(
         )
 
     # Limitar tamanho do lote
-    if len(registros) > 10000:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 4 -> Lote muito grande. Máximo 10000 registros")
+    if len(registros) > BATCH_SIZE:
+        sendMessageElement(ACCESSTOKEN, SALA, f"Erro 4 -> Lote muito grande. Máximo {BATCH_SIZE} registros")
         raise HTTPException(
-            status_code=400, detail="Lote muito grande. Máximo 10000 registros"
+            status_code=400, detail="Lote muito grande. Máximo {BATCH_SIZE} registros"
         )
 
     # Modo: inserir em tabela no PostgreSQL

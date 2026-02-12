@@ -1,7 +1,7 @@
+import requests, json
+
 def sendMessageElement(accessToken, roomId, mensagem):
     msg = f'🤖 IntelliBot<br>🚨 ALERTA DE SISTEMA 🚨<br>{mensagem}'
-
-    print_color(f"Enviando Msg {msg}\n", 33)
 
     url = f"https://cryptochat.com.br/_matrix/client/r0/rooms/{roomId}/send/m.room.message"
 

@@ -19,6 +19,8 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
 # Itens em "processando" há mais que N minutos voltam para "pendente" (queda do worker)
 FILA_PROCESSANDO_TIMEOUT_MINUTES = int(os.getenv("FILA_PROCESSANDO_TIMEOUT_MINUTES", "15"))
 
+BATCH_SIZE=int(os.getenv("BATCH_SIZE"))
+
 # Chave Element
 ACCESSTOKEN = os.getenv("ACCESSTOKEN")
 SALA = os.getenv("SALA")
