@@ -14,7 +14,7 @@ DB_TIMEOUT = int(os.getenv("DB_TIMEOUT", "30"))
 DB_LOGIN_TIMEOUT = int(os.getenv("DB_LOGIN_TIMEOUT", "10"))
 
 API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")
-API_JWT_TOKEN = os.getenv("API_JWT_TOKEN", "")
+API_JWT_TOKEN = os.getenv("API_JWT_TOKEN", "").strip()  # Remove espaços e quebras de linha
 
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
 

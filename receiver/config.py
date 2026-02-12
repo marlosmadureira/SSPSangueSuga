@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # JWT
-JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production").strip()  # Remove espaços e quebras de linha
 
 # PostgreSQL
 DB_HOST = os.getenv("DB_HOST", "localhost")

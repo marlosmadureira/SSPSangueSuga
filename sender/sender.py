@@ -184,7 +184,7 @@ def enviar_definicao_tabela() -> bool:
     base = API_BASE_URL.rstrip("/")
     url = f"{base}/tabela/definir"
     headers = {
-        "Authorization": f"Bearer {API_JWT_TOKEN}",
+        "Authorization": f"Bearer {API_JWT_TOKEN.strip()}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -270,7 +270,7 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
 def enviar_lote(lote: List[dict], checkpoint_key: str, nome_tabela: Optional[str] = None) -> bool:
     url = f"{API_BASE_URL.rstrip('/')}/lotes"
     headers = {
-        "Authorization": f"Bearer {API_JWT_TOKEN}",
+        "Authorization": f"Bearer {API_JWT_TOKEN.strip()}",
         "Content-Type": "application/json",
     }
     payload = {
