@@ -316,11 +316,10 @@ def main():
         print(f"Estrutura da tabela '{nome_tabela_pg}' enviada ao receiver (criada se não existir).")
     except requests.RequestException as e:
         print(f"Aviso: não foi possível definir tabela no receiver: {e}")
-        print(f"Enviando lotes com nome_tabela {DB_TABLE} mesmo assim (receiver insere se a tabela já existir).")
-        # Mantém nome_tabela_pg para inserção direta; se a tabela não existir, o receiver retornará erro.
+        print("Enviando lotes com nome_tabela mesmo assim (receiver insere se a tabela já existir).")
     except Exception as e:
         print(f"Aviso: erro ao obter/enviar schema: {e}")
-        nome_tabela_pg = None
+        # Mantém nome_tabela_pg para tentar inserir; se a tabela não existir, o receiver retornará erro.
 
     total_enviados = 0
     num_lote = 0

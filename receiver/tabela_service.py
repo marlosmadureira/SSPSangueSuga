@@ -101,10 +101,10 @@ def criar_tabela_se_nao_existe(nome_tabela: str, colunas: List[Dict[str, Any]]) 
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # Verificar se tabela já existe nesse schema
+        # Verificar se tabela já existe (case-insensitive: PostgreSQL normaliza em information_schema)
         cursor.execute("""
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = %s AND table_name = %s
+            WHERE LOWER(table_schema) = LOWER(%s) AND LOWER(table_name) = LOWER(%s)
         """, (schema, tabela))
         if cursor.fetchone():
             return False  # já existe
@@ -133,15 +133,28 @@ def criar_tabela_se_nao_existe(nome_tabela: str, colunas: List[Dict[str, Any]]) 
 
 
 def tabela_existe(nome_tabela: str) -> bool:
-    """Verifica se a tabela existe no schema indicado (ou public)."""
+    """Verifica se a tabela existe no schema indicado (ou public). Case-insensitive."""
     schema, tabela = _parse_schema_tabela(nome_tabela)
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = %s AND table_name = %s
+            WHERE LOWER(table_schema) = LOWER(%s) AND LOWER(table_name) = LOWER(%s)
         """, (schema, tabela))
         return cursor.fetchone() is not None
+
+
+def _obter_colunas_da_tabela(nome_tabela: str) -> List[str]:
+    """Retorna a lista de nomes de colunas da tabela na ordem correta (como estão no PostgreSQL)."""
+    schema, tabela = _parse_schema_tabela(nome_tabela)
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE LOWER(table_schema) = LOWER(%s) AND LOWER(table_name) = LOWER(%s)
+            ORDER BY ordinal_position
+        """, (schema, tabela))
+        return [row[0] for row in cursor.fetchall()]
 
 
 def _serializar_valor(val: Any) -> Any:
@@ -157,28 +170,46 @@ def _serializar_valor(val: Any) -> Any:
     return val
 
 
+def _valor_por_coluna(reg: Dict[str, Any], coluna_tabela: str, colunas_reg: List[str]) -> Any:
+    """Obtém o valor do registro para a coluna da tabela (match case-insensitive com as chaves do reg)."""
+    for chave in colunas_reg:
+        if chave.lower() == coluna_tabela.lower():
+            return reg.get(chave)
+    return None
+
+
 def inserir_registros_em_tabela(nome_tabela: str, registros: List[Dict[str, Any]]) -> int:
     """
     Insere os registros na tabela. A tabela deve já existir.
     nome_tabela pode ser "schema.tabela" ou "tabela".
+    Usa as colunas reais da tabela no PostgreSQL e mapeia os registros (case-insensitive).
     Retorna a quantidade de linhas inseridas.
     """
     qualificado = _schema_tabela_qualificado(nome_tabela)
     if not registros:
         return 0
 
-    # Usar as chaves do primeiro registro como colunas (todas devem ter a mesma estrutura)
-    colunas = list(registros[0].keys())
-    colunas_safe = [f'"{_identificador_seguro(c)}"' for c in colunas]
-    placeholders = ", ".join(["%s"] * len(colunas))
+    # Obter colunas da tabela na ordem em que existem no PostgreSQL
+    colunas_tabela = _obter_colunas_da_tabela(nome_tabela)
+    if not colunas_tabela:
+        raise RuntimeError(f"Nenhuma coluna encontrada na tabela {qualificado}")
+
+    # Usar nomes exatos da tabela (com aspas para preservar case no PostgreSQL)
+    colunas_safe = [f'"{c}"' for c in colunas_tabela]
+    placeholders = ", ".join(["%s"] * len(colunas_tabela))
     colunas_str = ", ".join(colunas_safe)
     sql = f'INSERT INTO {qualificado} ({colunas_str}) VALUES ({placeholders})'
+
+    colunas_reg = list(registros[0].keys())
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
         inseridos = 0
         for reg in registros:
-            valores = [_serializar_valor(reg.get(c)) for c in colunas]
+            valores = [
+                _serializar_valor(_valor_por_coluna(reg, col, colunas_reg))
+                for col in colunas_tabela
+            ]
             try:
                 cursor.execute(sql, valores)
                 inseridos += 1
