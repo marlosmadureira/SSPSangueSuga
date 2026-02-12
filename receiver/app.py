@@ -3,6 +3,8 @@
 API Receiver - Recebe lotes de dados e processa em fila.
 Autenticação via JWT (Bearer).
 """
+
+from sendElement import sendMessageElement
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -133,8 +135,10 @@ async def definir_tabela(
             criada=criada,
         )
     except ValueError as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 1 -> {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 2 -> {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao criar tabela: {str(e)}")
 
 
@@ -163,12 +167,14 @@ async def receber_lote(
 
     # Validação de entrada
     if not registros or not isinstance(registros, list):
+        sendElement(ACCESSTOKEN, SALA, f"Erro 3 -> Nenhum registro no lote"")
         raise HTTPException(
             status_code=400, detail="Nenhum registro no lote"
         )
 
     # Limitar tamanho do lote
     if len(registros) > 10000:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 4 -> Lote muito grande. Máximo 10000 registros")
         raise HTTPException(
             status_code=400, detail="Lote muito grande. Máximo 10000 registros"
         )
@@ -176,6 +182,7 @@ async def receber_lote(
     # Modo: inserir em tabela no PostgreSQL
     if nome_tabela and nome_tabela.strip():
         if not tabela_existe(nome_tabela.strip()):
+            sendElement(ACCESSTOKEN, SALA, f"Erro 5 -> Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.")
             raise HTTPException(
                 status_code=400,
                 detail=f"Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.",
@@ -189,6 +196,7 @@ async def receber_lote(
                 duplicado=False,
             )
         except Exception as e:
+            sendElement(ACCESSTOKEN, SALA, f"Erro 6 -> "Erro ao inserir na tabela (POST /api/lotes)")
             logging.exception("Erro ao inserir na tabela (POST /api/lotes)")
             raise HTTPException(status_code=500, detail=f"Erro ao inserir na tabela: {str(e)}")
 
@@ -203,6 +211,7 @@ async def receber_lote(
             duplicado=duplicado,
         )
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 7 -> Erro ao processar lote: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar lote: {str(e)}")
 
 
@@ -238,6 +247,7 @@ async def obter_proximo_item(
             payload=item["payload"],
         )
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 8 -> Erro ao processar lote: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar fila: {str(e)}")
 
 
@@ -259,6 +269,7 @@ async def marcar_item_processado(
         fila.marcar_item_processado(item_id)
         return {"ok": True}
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 9 -> Erro ao processar lote: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
 
 
@@ -274,12 +285,14 @@ async def marcar_item_erro(
 ):
     """Marca item com erro"""
     if item_id <= 0:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 10 -> ID inválido")
         raise HTTPException(status_code=400, detail="ID inválido")
     
     try:
         fila.marcar_item_erro(item_id)
         return {"ok": True}
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 11 -> Erro ao processar: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
 
 
@@ -298,6 +311,7 @@ async def estatisticas_fila(
         stats = fila.estatisticas()
         return FilaStatsResponse(**stats)
     except Exception as e:
+        sendElement(ACCESSTOKEN, SALA, f"Erro 11 -> Erro ao obter estatísticas: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
 
 
