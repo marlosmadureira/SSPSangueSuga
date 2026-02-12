@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: API Receptor - Fila de Lotes
+  description: Recebe lotes de dados e processa em fila. Autenticação via JWT (Bearer).
+  version: 1.0.0
+
+servers:
+  - url: "{{BASE_URL}}"
+    description: Servidor da API
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  security:
+    - bearerAuth: []
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        "200":
+          description: OK
+
+  /api/lotes:
+    post:
+      summary: Recebe um lote de registros e enfileira (idempotente por checkpoint_key)
+      description: |
+        Se checkpoint_key for enviado e já tiver sido recebido antes (retorno após queda),
+        o lote não é duplicado e a resposta vem com duplicado=true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - registros
+              properties:
+                registros:
+                  type: array
+                  items:
+                    type: object
+                    description: Um registro da tabela (campos dinâmicos)
+                total:
+                  type: integer
+                  description: Total de registros no lote
+                checkpoint_key:
+                  type: string
+                  description: Chave única do lote (envio usa para retomar sem duplicar)
+      responses:
+        "200":
+          description: Lote enfileirado ou já recebido (duplicado)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  lote_id:
+                    type: integer
+                    nullable: true
+                  itens:
+                    type: integer
+                  duplicado:
+                    type: boolean
+                    description: true se o lote já havia sido recebido (idempotência)
+        "400":
+          description: Lote vazio ou inválido
+        "401":
+          description: Token JWT ausente ou inválido
+
+  /api/fila/processar:
+    get:
+      summary: Obtém o próximo item da fila para processar
+      description: |
+        Itens que ficaram "processando" por mais que FILA_PROCESSANDO_TIMEOUT_MINUTES
+        (ex. queda do worker) são recolocados como pendente e podem ser processados de novo.
+      responses:
+        "200":
+          description: Próximo item ou fila vazia
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item_id:
+                    type: integer
+                    nullable: true
+                  lote_id:
+                    type: integer
+                    nullable: true
+                  indice:
+                    type: integer
+                    nullable: true
+                  payload:
+                    type: object
+                    nullable: true
+                  mensagem:
+                    type: string
+        "401":
+          description: Token JWT ausente ou inválido
+
+  /api/fila/{id}/concluir:
+    post:
+      summary: Marca item como processado
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Token JWT ausente ou inválido
+
+  /api/fila/{id}/erro:
+    post:
+      summary: Marca item com erro
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Token JWT ausente ou inválido
+
+  /api/fila/stats:
+    get:
+      summary: Estatísticas da fila (pendente, processado, erro)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pendente:
+                    type: integer
+                  processado:
+                    type: integer
+                  erro:
+                    type: integer
+                  total:
+                    type: integer
+                  processando:
+                    type: integer
+                    description: Itens atualmente em processamento
+        "401":
+          description: Token JWT ausente ou inválido
