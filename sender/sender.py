@@ -42,6 +42,30 @@ def print_color(message: str, color_code: int = 0) -> None:
     print(f"\033[{color_code}m{message}\033[0m")
 
 
+def format_table_name(table_name: str) -> str:
+    """
+    Formata o nome da tabela para SQL Server, suportando schema.tabela.
+    Exemplos:
+    - "Usuario" -> "[Usuario]"
+    - "SchEventos.Usuario" -> "[SchEventos].[Usuario]"
+    - "[SchEventos].[Usuario]" -> "[SchEventos].[Usuario]" (mantém como está)
+    """
+    if not table_name:
+        return table_name
+    
+    # Se já tem colchetes, retorna como está
+    if table_name.startswith('[') and table_name.endswith(']'):
+        return table_name
+    
+    # Divide por ponto para separar schema e tabela
+    parts = table_name.split('.')
+    
+    # Remove espaços e adiciona colchetes em cada parte
+    formatted_parts = [f"[{part.strip()}]" for part in parts]
+    
+    return '.'.join(formatted_parts)
+
+
 def get_connection():
     if not PYMSSQL_AVAILABLE:
         print_color("❌ pymssql não está instalado. Execute: pip install pymssql", 31)
@@ -109,6 +133,9 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
         raise Exception("Não foi possível estabelecer conexão com o banco de dados")
     cursor = conn.cursor()
 
+    # Formata o nome da tabela (suporta schema.tabela)
+    table_name = format_table_name(DB_TABLE)
+
     if DB_ORDER_COLUMN:
         # Paginação por chave: retoma após last_order_value (mais estável que OFFSET)
         col = f"[{DB_ORDER_COLUMN}]"
@@ -116,14 +143,14 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
         while True:
             if last_val is None:
                 tsql = f"""
-                SELECT * FROM [{DB_TABLE}]
+                SELECT * FROM {table_name}
                 ORDER BY {col}
                 OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY
                 """
                 cursor.execute(tsql, (BATCH_SIZE,))
             else:
                 tsql = f"""
-                SELECT * FROM [{DB_TABLE}]
+                SELECT * FROM {table_name}
                 WHERE {col} > %s
                 ORDER BY {col}
                 OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY
@@ -147,7 +174,7 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
         order_by = "(SELECT NULL)"
         while True:
             tsql = f"""
-            SELECT * FROM [{DB_TABLE}]
+            SELECT * FROM {table_name}
             ORDER BY {order_by}
             OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
             """
