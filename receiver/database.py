@@ -19,7 +19,8 @@ def init_db_pool():
             port=config.DB_PORT,
             database=config.DB_DATABASE,
             user=config.DB_USER,
-            password=config.DB_PASSWORD
+            password=config.DB_PASSWORD,
+            options="-c client_encoding=UTF8",
         )
     return _connection_pool
 
@@ -30,6 +31,7 @@ def get_db_connection():
     pool = init_db_pool()
     conn = pool.getconn()
     try:
+        conn.set_client_encoding("UTF8")
         yield conn
         conn.commit()
     except Exception:
