@@ -1,7 +1,13 @@
 # Proteção de segurança - Bloqueia acesso direto a arquivos sensíveis
 
-# Bloquear listagem de diretórios
+# Bloquear listagem de diretórios (CRÍTICO - previne exposição de arquivos)
 Options -Indexes
+DirectoryIndex index.php index.html
+
+# Forçar uso do index.php e bloquear listagem mesmo se index não existir
+<IfModule mod_dir.c>
+    DirectoryIndex index.php index.html
+</IfModule>
 
 # Bloquear acesso a arquivos de configuração
 <FilesMatch "^(config\.php|\.env|\.env\.example)$">
@@ -88,5 +94,19 @@ Options -Indexes
 
 # Prevenir acesso a arquivos PHP em diretórios específicos via URL
 RewriteEngine On
+
+# Bloquear acesso direto a arquivos em diretórios protegidos (exceto index.php)
 RewriteCond %{REQUEST_URI} ^.*/(data|src|vendor)/.*$ [NC]
+RewriteCond %{REQUEST_URI} !^.*/(data|src|vendor)/index\.php$ [NC]
+RewriteRule .* - [F,L]
+
+# Redirecionar requisições da raiz para public/index.php
+# Se a requisição não é para public/ e não é um arquivo/diretório existente
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [QSA,L]
+
+# Bloquear acesso direto a arquivos na raiz (exceto index.php e openapi.yaml)
+RewriteCond %{REQUEST_URI} ^/(config\.php|init_db\.php|gerar_token\.php|composer\.json|composer\.lock|\.env|\.env\.example|SEGURANCA\.md|PUBLICAR\.md|COMO_PUBLICAR\.txt)$ [NC]
 RewriteRule .* - [F,L]

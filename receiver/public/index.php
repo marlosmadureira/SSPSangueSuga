@@ -7,9 +7,39 @@ use Slim\Routing\RouteCollectorProxy;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
+// Verificar se vendor existe
+if (!file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    die(json_encode([
+        'erro' => 'Dependências não instaladas',
+        'mensagem' => 'Execute: composer install'
+    ]));
+}
+
 require __DIR__ . '/../vendor/autoload.php';
 
-$config = require __DIR__ . '/../config.php';
+// Verificar se config existe
+if (!file_exists(__DIR__ . '/../config.php')) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    die(json_encode([
+        'erro' => 'Arquivo de configuração não encontrado',
+        'mensagem' => 'Arquivo config.php não existe'
+    ]));
+}
+
+try {
+    $config = require __DIR__ . '/../config.php';
+} catch (\Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    error_log('Erro ao carregar config.php: ' . $e->getMessage());
+    die(json_encode([
+        'erro' => 'Erro ao carregar configuração',
+        'mensagem' => 'Verifique o arquivo config.php'
+    ]));
+}
 $app = AppFactory::create();
 $app->add(new BodyParsingMiddleware());
 
@@ -29,11 +59,36 @@ $errorHandler->registerErrorRenderer('application/json', function () {
     };
 });
 
-$jwt = new JwtMiddleware($config['jwt_secret']);
-$fila = new FilaRepository(
-    $config['db'],
-    $config['fila_processando_timeout_minutes'] ?? 15
-);
+// Criar JWT middleware (não precisa de banco)
+try {
+    $jwt = new JwtMiddleware($config['jwt_secret']);
+} catch (\Throwable $e) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    error_log('Erro ao criar JwtMiddleware: ' . $e->getMessage());
+    die(json_encode([
+        'erro' => 'Erro ao inicializar autenticação',
+        'mensagem' => 'Verifique JWT_SECRET no .env'
+    ]));
+}
+
+// Função para criar FilaRepository apenas quando necessário (lazy loading)
+// Isso evita erro de conexão com banco em rotas que não precisam dele (ex: /api/health)
+$getFila = function() use ($config) {
+    static $fila = null;
+    if ($fila === null) {
+        try {
+            $fila = new FilaRepository(
+                $config['db'],
+                $config['fila_processando_timeout_minutes'] ?? 15
+            );
+        } catch (\Throwable $e) {
+            error_log('Erro ao criar FilaRepository: ' . $e->getMessage());
+            throw new \RuntimeException('Erro ao conectar ao banco de dados: ' . $e->getMessage());
+        }
+    }
+    return $fila;
+};
 
 // Middleware para adicionar headers de segurança em todas as respostas
 $app->add(function (Request $request, $handler): Response {
@@ -64,8 +119,17 @@ $app->get('/openapi.yaml', function (Request $req, Response $res) use ($config) 
 });
 
 // Grupo protegido por JWT
-$app->group('/api', function (RouteCollectorProxy $group) use ($fila) {
-    $group->post('/lotes', function (Request $req, Response $res) use ($fila) {
+$app->group('/api', function (RouteCollectorProxy $group) use ($getFila) {
+    $group->post('/lotes', function (Request $req, Response $res) use ($getFila) {
+        try {
+            $fila = $getFila();
+        } catch (\Throwable $e) {
+            $res->getBody()->write(json_encode([
+                'erro' => 'Erro ao conectar ao banco de dados',
+                'mensagem' => 'Verifique as configurações do PostgreSQL no .env'
+            ]));
+            return $res->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
         try {
             $body = $req->getParsedBody() ?? [];
             $registros = $body['registros'] ?? [];
@@ -100,7 +164,16 @@ $app->group('/api', function (RouteCollectorProxy $group) use ($fila) {
         }
     });
 
-    $group->get('/fila/processar', function (Request $req, Response $res) use ($fila) {
+    $group->get('/fila/processar', function (Request $req, Response $res) use ($getFila) {
+        try {
+            $fila = $getFila();
+        } catch (\Throwable $e) {
+            $res->getBody()->write(json_encode([
+                'erro' => 'Erro ao conectar ao banco de dados',
+                'mensagem' => 'Verifique as configurações do PostgreSQL no .env'
+            ]));
+            return $res->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
         try {
             $item = $fila->obterProximoItem();
             if (!$item) {
@@ -121,7 +194,16 @@ $app->group('/api', function (RouteCollectorProxy $group) use ($fila) {
         }
     });
 
-    $group->post('/fila/{id}/concluir', function (Request $req, Response $res, array $args) use ($fila) {
+    $group->post('/fila/{id}/concluir', function (Request $req, Response $res, array $args) use ($getFila) {
+        try {
+            $fila = $getFila();
+        } catch (\Throwable $e) {
+            $res->getBody()->write(json_encode([
+                'erro' => 'Erro ao conectar ao banco de dados',
+                'mensagem' => 'Verifique as configurações do PostgreSQL no .env'
+            ]));
+            return $res->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
         try {
             $id = (int) ($args['id'] ?? 0);
             if ($id <= 0) {
@@ -138,7 +220,16 @@ $app->group('/api', function (RouteCollectorProxy $group) use ($fila) {
         }
     });
 
-    $group->post('/fila/{id}/erro', function (Request $req, Response $res, array $args) use ($fila) {
+    $group->post('/fila/{id}/erro', function (Request $req, Response $res, array $args) use ($getFila) {
+        try {
+            $fila = $getFila();
+        } catch (\Throwable $e) {
+            $res->getBody()->write(json_encode([
+                'erro' => 'Erro ao conectar ao banco de dados',
+                'mensagem' => 'Verifique as configurações do PostgreSQL no .env'
+            ]));
+            return $res->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
         try {
             $id = (int) ($args['id'] ?? 0);
             if ($id <= 0) {
@@ -155,7 +246,16 @@ $app->group('/api', function (RouteCollectorProxy $group) use ($fila) {
         }
     });
 
-    $group->get('/fila/stats', function (Request $req, Response $res) use ($fila) {
+    $group->get('/fila/stats', function (Request $req, Response $res) use ($getFila) {
+        try {
+            $fila = $getFila();
+        } catch (\Throwable $e) {
+            $res->getBody()->write(json_encode([
+                'erro' => 'Erro ao conectar ao banco de dados',
+                'mensagem' => 'Verifique as configurações do PostgreSQL no .env'
+            ]));
+            return $res->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
         try {
             $res->getBody()->write(json_encode($fila->estatisticas()));
             return $res->withHeader('Content-Type', 'application/json');

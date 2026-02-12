@@ -10,19 +10,26 @@ import time
 from datetime import date, datetime
 from typing import Any, Iterator, List, Optional, Tuple
 
-import pyodbc
+try:
+    import pymssql
+    PYMSSQL_AVAILABLE = True
+except ImportError:
+    PYMSSQL_AVAILABLE = False
+
 import requests
 
 from config import (
     API_BASE_URL,
     API_JWT_TOKEN,
     BATCH_SIZE,
-    DB_DRIVER,
+    DB_LOGIN_TIMEOUT,
     DB_NAME,
     DB_ORDER_COLUMN,
     DB_PASSWORD,
+    DB_PORT,
     DB_SERVER,
     DB_TABLE,
+    DB_TIMEOUT,
     DB_USER,
     RETRY_ATTEMPTS,
     RETRY_BACKOFF_SECONDS,
@@ -30,15 +37,34 @@ from config import (
 )
 
 
+def print_color(message: str, color_code: int = 0) -> None:
+    """Imprime mensagem com código de cor ANSI."""
+    print(f"\033[{color_code}m{message}\033[0m")
+
+
 def get_connection():
-    conn_str = (
-        f"DRIVER={{{DB_DRIVER}}};"
-        f"SERVER={DB_SERVER};"
-        f"DATABASE={DB_NAME};"
-        f"UID={DB_USER};"
-        f"PWD={DB_PASSWORD};"
-    )
-    return pyodbc.connect(conn_str)
+    if not PYMSSQL_AVAILABLE:
+        print_color("❌ pymssql não está instalado. Execute: pip install pymssql", 31)
+        return None
+
+    try:
+        conn = pymssql.connect(
+            server=DB_SERVER,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            timeout=DB_TIMEOUT,
+            login_timeout=DB_LOGIN_TIMEOUT
+        )
+        print_color("✅ Conexão Aberta com sucesso.", 32)
+        return conn
+    except pymssql.OperationalError as e:
+        print_color(f"❌ Erro operacional: {e}", 31)
+        return None
+    except pymssql.DatabaseError as e:
+        print_color(f"❌ Erro de banco de dados: {e}", 31)
+        return None
 
 
 def rows_to_dict(cursor) -> List[dict]:
@@ -79,6 +105,8 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
     checkpoint_key identifica este lote para idempotência no receiver.
     """
     conn = get_connection()
+    if conn is None:
+        raise Exception("Não foi possível estabelecer conexão com o banco de dados")
     cursor = conn.cursor()
 
     if DB_ORDER_COLUMN:
@@ -90,15 +118,15 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
                 tsql = f"""
                 SELECT * FROM [{DB_TABLE}]
                 ORDER BY {col}
-                OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY
                 """
                 cursor.execute(tsql, (BATCH_SIZE,))
             else:
                 tsql = f"""
                 SELECT * FROM [{DB_TABLE}]
-                WHERE {col} > ?
+                WHERE {col} > %s
                 ORDER BY {col}
-                OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY
+                OFFSET 0 ROWS FETCH NEXT %s ROWS ONLY
                 """
                 cursor.execute(tsql, (last_val, BATCH_SIZE))
             batch = rows_to_dict(cursor)
@@ -121,7 +149,7 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
             tsql = f"""
             SELECT * FROM [{DB_TABLE}]
             ORDER BY {order_by}
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+            OFFSET %s ROWS FETCH NEXT %s ROWS ONLY
             """
             cursor.execute(tsql, (offset, BATCH_SIZE))
             batch = rows_to_dict(cursor)
@@ -191,8 +219,11 @@ def main():
             print(f"Resposta: {e.response.text}")
         print("Execute novamente para retomar de onde parou.")
         return 1
-    except pyodbc.Error as e:
-        print(f"Erro no banco: {e}")
+    except Exception as e:
+        if PYMSSQL_AVAILABLE and isinstance(e, (pymssql.OperationalError, pymssql.DatabaseError)):
+            print_color(f"❌ Erro no banco: {e}", 31)
+        else:
+            print_color(f"❌ Erro inesperado: {e}", 31)
         return 1
     return 0
 
