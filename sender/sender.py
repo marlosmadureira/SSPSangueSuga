@@ -157,10 +157,28 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> None:
     path = STATE_FILE
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=0)
-    os.replace(tmp, path)
+    # Arquivo temporário único (evita conflito com outro processo e ajuda no Windows)
+    tmp = f"{path}.tmp.{os.getpid()}"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=0)
+            f.flush()
+            os.fsync(f.fileno())
+        # No Windows, antivirus/outro processo podem bloquear brevemente; tentar algumas vezes
+        for attempt in range(1, 4):
+            try:
+                os.replace(tmp, path)
+                return
+            except OSError as e:
+                if attempt == 3 or getattr(e, "winerror", None) != 5:
+                    raise
+                time_module.sleep(0.15 * attempt)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def obter_schema_tabela(conn) -> list:
