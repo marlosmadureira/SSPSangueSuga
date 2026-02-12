@@ -16,8 +16,11 @@ from models import (
     FilaStatsResponse,
     HealthResponse,
     ErrorResponse,
+    TabelaDefinirRequest,
+    TabelaDefinirResponse,
 )
 from repository import FilaRepository
+from tabela_service import criar_tabela_se_nao_existe, inserir_registros_em_tabela, tabela_existe
 from jwt_auth import verify_token
 from database import init_db_pool, close_db_pool
 
@@ -95,14 +98,55 @@ async def get_openapi_yaml():
 
 # Rotas protegidas (requerem JWT)
 @app.post(
+    "/api/tabela/definir",
+    response_model=TabelaDefinirResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["Protegido"],
+    summary="Cria tabela no PostgreSQL a partir do schema do SQL Server (se não existir)",
+)
+async def definir_tabela(
+    body: TabelaDefinirRequest,
+    jwt_payload: dict = Depends(verify_token),
+):
+    """
+    Cria a tabela no PostgreSQL com a estrutura enviada.
+    Se a tabela já existir, não altera e retorna criada=false.
+    O sender deve chamar este endpoint antes de enviar os lotes (ou na primeira execução).
+    """
+    try:
+        colunas_dict = [
+            {
+                "nome": c.nome,
+                "tipo_sqlserver": c.tipo_sqlserver,
+                "max_length": c.max_length,
+                "numeric_precision": c.numeric_precision,
+                "numeric_scale": c.numeric_scale,
+                "is_nullable": c.is_nullable if c.is_nullable is not None else True,
+            }
+            for c in body.colunas
+        ]
+        criada = criar_tabela_se_nao_existe(body.nome_tabela, colunas_dict)
+        return TabelaDefinirResponse(
+            ok=True,
+            mensagem="Tabela criada com sucesso." if criada else "Tabela já existia. Nenhuma alteração.",
+            criada=criada,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao criar tabela: {str(e)}")
+
+
+@app.post(
     "/api/lotes",
     response_model=LoteResponse,
     status_code=status.HTTP_200_OK,
     tags=["Protegido"],
-    summary="Recebe um lote de registros e enfileira (idempotente por checkpoint_key)",
+    summary="Recebe um lote de registros e enfileira ou insere em tabela (idempotente por checkpoint_key)",
     description="""
     Se checkpoint_key for enviado e já tiver sido recebido antes (retorno após queda),
     o lote não é duplicado e a resposta vem com duplicado=true.
+    Se nome_tabela for enviado, os registros são inseridos na tabela no PostgreSQL (que deve ter sido criada via POST /api/tabela/definir). Se a tabela já existir, não recria e apenas insere.
     """,
 )
 async def receber_lote(
@@ -110,10 +154,11 @@ async def receber_lote(
     jwt_payload: dict = Depends(verify_token),
     fila: FilaRepository = Depends(get_fila_repository),
 ):
-    """Recebe um lote de registros e enfileira"""
+    """Recebe um lote de registros; se nome_tabela for informado, insere na tabela; senão enfileira."""
     registros = lote.registros
     total = lote.total if lote.total is not None else len(registros)
     checkpoint_key = lote.checkpoint_key
+    nome_tabela = lote.nome_tabela
 
     # Validação de entrada
     if not registros or not isinstance(registros, list):
@@ -127,6 +172,25 @@ async def receber_lote(
             status_code=400, detail="Lote muito grande. Máximo 10000 registros"
         )
 
+    # Modo: inserir em tabela no PostgreSQL
+    if nome_tabela and nome_tabela.strip():
+        if not tabela_existe(nome_tabela.strip()):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.",
+            )
+        try:
+            inseridos = inserir_registros_em_tabela(nome_tabela.strip(), registros)
+            return LoteResponse(
+                ok=True,
+                lote_id=None,
+                itens=inseridos,
+                duplicado=False,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Erro ao inserir na tabela: {str(e)}")
+
+    # Modo original: enfileirar na fila
     try:
         lote_id = fila.enfileirar_lote(total, registros, checkpoint_key)
         duplicado = (lote_id == 0 and checkpoint_key is not None)

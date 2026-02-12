@@ -123,6 +123,79 @@ def save_state(state: dict) -> None:
     os.replace(tmp, path)
 
 
+def obter_schema_tabela(conn) -> list:
+    """
+    Obtém a estrutura da tabela no SQL Server (INFORMATION_SCHEMA.COLUMNS).
+    Retorna lista de dicts com nome, tipo_sqlserver, max_length, numeric_precision, numeric_scale, is_nullable.
+    """
+    parts = DB_TABLE.replace("[", "").replace("]", "").split(".")
+    if len(parts) == 2:
+        schema_name, table_name = parts[0].strip(), parts[1].strip()
+    else:
+        schema_name, table_name = "dbo", parts[0].strip() if parts else ""
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT
+            COLUMN_NAME,
+            DATA_TYPE,
+            CHARACTER_MAXIMUM_LENGTH,
+            NUMERIC_PRECISION,
+            NUMERIC_SCALE,
+            IS_NULLABLE
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+        ORDER BY ORDINAL_POSITION
+    """, (schema_name, table_name))
+    rows = cursor.fetchall()
+    cursor.close()
+    return [
+        {
+            "nome": row[0],
+            "tipo_sqlserver": (row[1] or "varchar").lower(),
+            "max_length": row[2] if row[2] is not None and row[2] >= 0 else None,
+            "numeric_precision": row[3],
+            "numeric_scale": row[4],
+            "is_nullable": (row[5] or "YES").upper() == "YES",
+        }
+        for row in rows
+    ]
+
+
+def nome_tabela_postgres() -> str:
+    """Nome da tabela no PostgreSQL (schema_tabela ou tabela, sem caracteres especiais)."""
+    s = DB_TABLE.replace("[", "").replace("]", "").strip()
+    return s.replace(".", "_").replace(" ", "_") or "tabela"
+
+
+def enviar_definicao_tabela() -> bool:
+    """Envia a definição da tabela para o receiver (POST /api/tabela/definir). Retorna True se OK."""
+    conn = get_connection()
+    if conn is None:
+        raise Exception("Não foi possível conectar ao SQL Server para obter o schema")
+    try:
+        colunas = obter_schema_tabela(conn)
+        conn.close()
+    except Exception as e:
+        conn.close()
+        raise e
+    if not colunas:
+        raise Exception(f"Nenhuma coluna encontrada para a tabela {DB_TABLE}")
+    # URL do receiver: ex. http://host:8080/api -> http://host:8080/api/tabela/definir
+    base = API_BASE_URL.rstrip("/")
+    url = f"{base}/tabela/definir"
+    headers = {
+        "Authorization": f"Bearer {API_JWT_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "nome_tabela": nome_tabela_postgres(),
+        "colunas": colunas,
+    }
+    r = requests.post(url, json=payload, headers=headers, timeout=30)
+    r.raise_for_status()
+    return True
+
+
 def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
     """
     Gera (lote, novo_estado, checkpoint_key).
@@ -194,8 +267,8 @@ def iterar_lotes(state: dict) -> Iterator[Tuple[List[dict], dict, str]]:
     conn.close()
 
 
-def enviar_lote(lote: List[dict], checkpoint_key: str) -> bool:
-    url = f"{API_BASE_URL}/lotes"
+def enviar_lote(lote: List[dict], checkpoint_key: str, nome_tabela: Optional[str] = None) -> bool:
+    url = f"{API_BASE_URL.rstrip('/')}/lotes"
     headers = {
         "Authorization": f"Bearer {API_JWT_TOKEN}",
         "Content-Type": "application/json",
@@ -205,6 +278,8 @@ def enviar_lote(lote: List[dict], checkpoint_key: str) -> bool:
         "total": len(lote),
         "checkpoint_key": checkpoint_key,
     }
+    if nome_tabela:
+        payload["nome_tabela"] = nome_tabela
     r = requests.post(url, json=payload, headers=headers, timeout=60)
     r.raise_for_status()
     return True
@@ -219,6 +294,22 @@ def main():
     if state:
         print("Retomando de onde parou (checkpoint anterior encontrado).")
 
+    # Nome da tabela no PostgreSQL (para criar/inserir no receiver)
+    nome_tabela_pg = nome_tabela_postgres()
+
+    # Antes do primeiro lote: garantir que a tabela existe no receiver (enviar definição).
+    # Se já existir no PostgreSQL, o receiver não recria e só insere.
+    try:
+        enviar_definicao_tabela()
+        print(f"Estrutura da tabela '{nome_tabela_pg}' enviada ao receiver (criada se não existir).")
+    except requests.RequestException as e:
+        print(f"Aviso: não foi possível definir tabela no receiver: {e}")
+        print("Enviando lotes com nome_tabela mesmo assim (receiver insere se a tabela já existir).")
+        # Mantém nome_tabela_pg para inserção direta; se a tabela não existir, o receiver retornará erro.
+    except Exception as e:
+        print(f"Aviso: erro ao obter/enviar schema: {e}")
+        nome_tabela_pg = None
+
     total_enviados = 0
     num_lote = 0
 
@@ -226,7 +317,7 @@ def main():
         for lote, new_state, checkpoint_key in iterar_lotes(state):
             for attempt in range(1, RETRY_ATTEMPTS + 1):
                 try:
-                    enviar_lote(lote, checkpoint_key)
+                    enviar_lote(lote, checkpoint_key, nome_tabela=nome_tabela_pg)
                     break
                 except requests.RequestException as e:
                     if attempt == RETRY_ATTEMPTS:
