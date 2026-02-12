@@ -146,3 +146,10 @@ Use o mesmo **JWT_SECRET** no `.env` do receiver. Copie o token gerado para `API
 | **receiver**| API PHP: recebe lotes (JWT), enfileira; você consome com `GET /api/fila/processar` e marca concluído/erro. |
 
 Swagger: servir `receiver/public` e acessar `/openapi.yaml` para importar na sua estrutura Swagger em PHP.
+
+```
+chmod 644 *.php
+chmod 600 .env
+chmod 755 src/
+chmod 700 data/
+```
