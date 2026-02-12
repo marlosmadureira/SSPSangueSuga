@@ -10,28 +10,18 @@ API para receber lotes de dados e processar em fila. Autenticação via JWT (Bea
 
 ## 🚀 Instalação e Configuração
 
-### 1. Preparar Ambiente
+### 1. Instalar Dependências
 
 ```bash
 # Navegar para o diretório receiver
 cd receiver
 
-# Criar ambiente virtual (recomendado)
-python3 -m venv venv
-
-# Ativar ambiente virtual
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
+# Instalar dependências (Python do sistema)
+pip3 install -r requirements.txt
+# ou: python3 -m pip install -r requirements.txt
 ```
 
-### 2. Instalar Dependências
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configurar Variáveis de Ambiente
+### 2. Configurar Variáveis de Ambiente
 
 ```bash
 # Copiar arquivo de exemplo
@@ -61,10 +51,10 @@ BASE_URL=http://localhost:8080
 FILA_PROCESSANDO_TIMEOUT_MINUTES=15
 ```
 
-### 4. Inicializar Banco de Dados
+### 3. Inicializar Banco de Dados
 
 ```bash
-python init_db.py
+python3 init_db.py
 ```
 
 Este script cria as seguintes tabelas:
@@ -73,10 +63,10 @@ Este script cria as seguintes tabelas:
 - `checkpoint_lotes` - Controle de idempotência por checkpoint_key
 - `usuario` - Tabela de usuários (se necessário)
 
-### 5. Gerar Token JWT
+### 4. Gerar Token JWT
 
 ```bash
-python gerar_token.py
+python3 gerar_token.py
 ```
 
 Copie o token gerado e use no header `Authorization: Bearer SEU_TOKEN`.
@@ -86,13 +76,13 @@ Copie o token gerado e use no header `Authorization: Bearer SEU_TOKEN`.
 ### Desenvolvimento
 
 ```bash
-python app.py
+python3 app.py
 ```
 
 Ou usando uvicorn diretamente:
 
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8080 --reload
+python3 -m uvicorn app:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 A API estará disponível em: `http://localhost:8080`
@@ -102,11 +92,11 @@ A API estará disponível em: `http://localhost:8080`
 Recomenda-se usar Gunicorn com Uvicorn workers:
 
 ```bash
-# Instalar Gunicorn
-pip install gunicorn
+# Instalar Gunicorn (se ainda não instalou)
+pip3 install gunicorn
 
-# Executar com múltiplos workers
-gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080
+# Executar com múltiplos workers (Python do sistema)
+python3 -m gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080
 ```
 
 **Com systemd (serviço Linux):**
@@ -122,8 +112,7 @@ After=network.target postgresql.service
 User=www-data
 Group=www-data
 WorkingDirectory=/caminho/para/receiver
-Environment="PATH=/caminho/para/receiver/venv/bin"
-ExecStart=/caminho/para/receiver/venv/bin/gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8080
+ExecStart=/usr/bin/python3 -m gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 127.0.0.1:8080
 Restart=always
 
 [Install]
@@ -385,7 +374,7 @@ curl http://localhost:8080/api/fila/stats \
 
 ### Autenticação JWT
 - Todas as rotas protegidas requerem token JWT válido
-- Tokens são gerados com `python gerar_token.py`
+- Tokens são gerados com `python3 gerar_token.py`
 - Tokens não expiram automaticamente (controlados pelo sistema)
 
 ### Headers de Segurança
@@ -451,7 +440,7 @@ Itens que ficam em status "processando" por mais que `FILA_PROCESSANDO_TIMEOUT_M
    psql -h localhost -U postgres -l | grep sspsanguesuga
    ```
 
-5. Execute `python init_db.py` novamente se necessário
+5. Execute `python3 init_db.py` novamente se necessário
 
 ### Token JWT Inválido
 
@@ -465,7 +454,7 @@ Itens que ficam em status "processando" por mais que `FILA_PROCESSANDO_TIMEOUT_M
    ```
 3. Gere um novo token:
    ```bash
-   python gerar_token.py
+   python3 gerar_token.py
    ```
 
 ### Porta Já em Uso
@@ -492,7 +481,7 @@ Itens que ficam em status "processando" por mais que `FILA_PROCESSANDO_TIMEOUT_M
 **Soluções:**
 1. Verifique os logs da aplicação
 2. Verifique se o banco de dados está acessível
-3. Verifique se as tabelas foram criadas (`python init_db.py`)
+3. Verifique se as tabelas foram criadas (`python3 init_db.py`)
 4. Verifique se o lote não excede 10.000 registros
 
 ## 📦 Estrutura do Projeto

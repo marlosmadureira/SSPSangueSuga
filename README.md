@@ -50,6 +50,38 @@ Este guia assume que você instalará:
 ### Passo 1.1: Instalar PostgreSQL
 
 **Ubuntu/Debian:**
+
+Primeiro, verifique a versão do Ubuntu para usar o codename correto:
+```bash
+lsb_release -a
+# ou
+cat /etc/os-release | grep VERSION_CODENAME
+```
+
+**Codenames comuns do Ubuntu:**
+- `jammy` = Ubuntu 22.04 LTS
+- `focal` = Ubuntu 20.04 LTS
+- `bionic` = Ubuntu 18.04 LTS
+- `xenial` = Ubuntu 16.04 LTS
+
+**Se os repositórios estiverem corrompidos ou ausentes, adicione-os:**
+
+```bash
+# Substitua 'jammy' pelo codename da sua versão (veja acima)
+CODENAME=$(lsb_release -cs)
+
+# Adicionar repositórios principais
+sudo tee /etc/apt/sources.list.d/ubuntu-main.list > /dev/null <<EOF
+deb http://archive.ubuntu.com/ubuntu ${CODENAME} main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${CODENAME}-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${CODENAME}-security main restricted universe multiverse
+EOF
+
+# Atualizar lista de pacotes
+sudo apt update
+```
+
+**Instalar PostgreSQL:**
 ```bash
 sudo apt update
 sudo apt install -y postgresql postgresql-contrib
@@ -65,8 +97,8 @@ sudo -u postgres psql
 No prompt do PostgreSQL:
 ```sql
 CREATE DATABASE sspsanguesuga;
-CREATE USER seu_usuario WITH PASSWORD 'sua_senha_segura';
-GRANT ALL PRIVILEGES ON DATABASE sspsanguesuga TO seu_usuario;
+CREATE USER sanguesuga WITH PASSWORD 'ngfe#@UGU6@@s1dii**@$Mx4FBwUMPrGzN*#$etcA.=vDAT..RB1F66';
+GRANT ALL PRIVILEGES ON DATABASE sspsanguesuga TO sanguesuga;
 \q
 ```
 
@@ -74,7 +106,7 @@ GRANT ALL PRIVILEGES ON DATABASE sspsanguesuga TO seu_usuario;
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install -y python3 python3-pip python3-venv
+sudo apt install -y python3 python3-pip
 ```
 
 **Windows:**
@@ -92,28 +124,15 @@ cd /opt/receiver
 # (copie toda a pasta receiver/ do projeto)
 ```
 
-### Passo 1.4: Configurar Ambiente Virtual
+### Passo 1.4: Instalar Dependências Python
 
 ```bash
 cd /opt/receiver
-
-# Criar ambiente virtual
-python3 -m venv venv
-
-# Ativar ambiente virtual
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
+pip3 install --upgrade pip
+pip3 install -r requirements.txt
 ```
 
-### Passo 1.5: Instalar Dependências Python
-
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-### Passo 1.6: Configurar Variáveis de Ambiente
+### Passo 1.5: Configurar Variáveis de Ambiente
 
 ```bash
 # Copiar arquivo de exemplo
@@ -147,18 +166,20 @@ FILA_PROCESSANDO_TIMEOUT_MINUTES=15
 
 **⚠️ IMPORTANTE:** Anote o valor de `JWT_SECRET` - você precisará dele na Máquina 2!
 
-### Passo 1.7: Inicializar Banco de Dados
+### Passo 1.6: Inicializar Banco de Dados
 
 ```bash
-python init_db.py
+cd /opt/receiver
+python3 init_db.py
 ```
 
 Você deve ver a mensagem: "Banco de dados inicializado com sucesso!"
 
-### Passo 1.8: Gerar Token JWT
+### Passo 1.7: Gerar Token JWT
 
 ```bash
-python gerar_token.py
+cd /opt/receiver
+python3 gerar_token.py
 ```
 
 **⚠️ IMPORTANTE:** Copie o token gerado - você precisará dele na Máquina 2 para configurar o sender!
@@ -168,16 +189,17 @@ python gerar_token.py
 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzZW5kZXIiLCJpYXQiOjE3MDc4OTIzNDV9.abc123def456...
 ```
 
-### Passo 1.9: Testar Receiver Localmente
+### Passo 1.8: Testar Receiver Localmente
 
 ```bash
+cd /opt/receiver
 # Executar em modo desenvolvimento
-python app.py
+python3 app.py
 ```
 
 Ou usando uvicorn diretamente:
 ```bash
-uvicorn app:app --host 0.0.0.0 --port 8080 --reload
+python3 -m uvicorn app:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 **Testar se está funcionando:**
@@ -190,7 +212,7 @@ curl http://localhost:8080/api/health
 # Deve retornar: {"status":"ok"}
 ```
 
-### Passo 1.10: Configurar Firewall (se necessário)
+### Passo 1.9: Configurar Firewall (se necessário)
 
 **Ubuntu/Debian (UFW):**
 ```bash
@@ -204,7 +226,7 @@ sudo firewall-cmd --permanent --add-port=8080/tcp
 sudo firewall-cmd --reload
 ```
 
-### Passo 1.11: Configurar como Serviço (Produção)
+### Passo 1.10: Configurar como Serviço (Produção)
 
 **Criar arquivo de serviço systemd:**
 
@@ -212,7 +234,7 @@ sudo firewall-cmd --reload
 sudo nano /etc/systemd/system/receiver-api.service
 ```
 
-**Conteúdo do arquivo:**
+**Conteúdo do arquivo (Python do sistema, sem ambiente virtual):**
 
 ```ini
 [Unit]
@@ -224,8 +246,7 @@ Type=notify
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/receiver
-Environment="PATH=/opt/receiver/venv/bin"
-ExecStart=/opt/receiver/venv/bin/gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080
+ExecStart=/usr/bin/python3 -m gunicorn app:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080
 Restart=always
 RestartSec=10
 
@@ -247,7 +268,7 @@ sudo systemctl status receiver-api
 sudo journalctl -u receiver-api -f
 ```
 
-### Passo 1.12: Verificar IP da Máquina 1
+### Passo 1.11: Verificar IP da Máquina 1
 
 ```bash
 # Linux
@@ -276,6 +297,25 @@ ipconfig
 ### Passo 2.1: Instalar Python
 
 **Ubuntu/Debian:**
+
+Se houver erro com os repositórios, primeiro corrija-os:
+
+```bash
+# Verificar codename da versão
+CODENAME=$(lsb_release -cs)
+
+# Adicionar repositórios principais (se necessário)
+sudo tee /etc/apt/sources.list.d/ubuntu-main.list > /dev/null <<EOF
+deb http://archive.ubuntu.com/ubuntu ${CODENAME} main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${CODENAME}-updates main restricted universe multiverse
+deb http://archive.ubuntu.com/ubuntu ${CODENAME}-security main restricted universe multiverse
+EOF
+
+# Atualizar lista de pacotes
+sudo apt update
+```
+
+**Instalar Python:**
 ```bash
 sudo apt update
 sudo apt install -y python3 python3-pip python3-venv
