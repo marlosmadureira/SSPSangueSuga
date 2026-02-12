@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import logging
 import os
 import config
 from models import (
@@ -188,6 +189,7 @@ async def receber_lote(
                 duplicado=False,
             )
         except Exception as e:
+            logging.exception("Erro ao inserir na tabela (POST /api/lotes)")
             raise HTTPException(status_code=500, detail=f"Erro ao inserir na tabela: {str(e)}")
 
     # Modo original: enfileirar na fila

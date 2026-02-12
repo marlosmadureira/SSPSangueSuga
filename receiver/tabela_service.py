@@ -4,7 +4,8 @@ e inserir registros. Se a tabela já existir, não recria e apenas insere.
 """
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, time as time_type
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from database import get_db_connection
@@ -158,11 +159,21 @@ def _obter_colunas_da_tabela(nome_tabela: str) -> List[str]:
 
 
 def _serializar_valor(val: Any) -> Any:
-    """Serializa valor para inserção no PostgreSQL (datetime -> string, etc.)."""
+    """Serializa valor para inserção no PostgreSQL (datetime, time, Decimal, bytes, etc.)."""
     if val is None:
         return None
-    if isinstance(val, (datetime, date)):
+    if isinstance(val, (datetime, date, time_type)):
         return val.isoformat()
+    if isinstance(val, Decimal):
+        try:
+            return int(val) if val % 1 == 0 else float(val)
+        except (ValueError, TypeError):
+            return float(val)
+    if isinstance(val, bytes):
+        try:
+            return val.decode("utf-8")
+        except Exception:
+            return val.hex()
     if hasattr(val, "isoformat"):
         return val.isoformat()
     if isinstance(val, (dict, list)):
@@ -200,7 +211,12 @@ def inserir_registros_em_tabela(nome_tabela: str, registros: List[Dict[str, Any]
     colunas_str = ", ".join(colunas_safe)
     sql = f'INSERT INTO {qualificado} ({colunas_str}) VALUES ({placeholders})'
 
-    colunas_reg = list(registros[0].keys())
+    # União de todas as chaves dos registros para mapear colunas mesmo quando linhas têm chaves diferentes
+    all_keys: Dict[str, None] = {}
+    for reg in registros:
+        for k in reg.keys():
+            all_keys[k] = None
+    colunas_reg = list(all_keys.keys())
 
     with get_db_connection() as conn:
         cursor = conn.cursor()

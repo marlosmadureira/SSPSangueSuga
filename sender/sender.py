@@ -7,7 +7,7 @@ Uso: python sender.py
 import json
 import os
 import re
-import time
+import time as time_module
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Any, Iterator, List, Optional, Tuple
@@ -375,7 +375,7 @@ def main():
                     if attempt == RETRY_ATTEMPTS:
                         raise
                     print(f"Falha de conexão (tentativa {attempt}/{RETRY_ATTEMPTS}): {e}. Reagendando em {RETRY_BACKOFF_SECONDS}s...")
-                    time.sleep(RETRY_BACKOFF_SECONDS)
+                    time_module.sleep(RETRY_BACKOFF_SECONDS)
 
             save_state(new_state)
             num_lote += 1
