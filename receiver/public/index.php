@@ -14,7 +14,7 @@ $app->addErrorMiddleware(true, true, true);
 
 $jwt = new JwtMiddleware($config['jwt_secret']);
 $fila = new FilaRepository(
-    $config['fila_db'],
+    $config['db'],
     $config['fila_processando_timeout_minutes'] ?? 15
 );
 

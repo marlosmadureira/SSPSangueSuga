@@ -8,14 +8,16 @@ class FilaRepository
     private PDO $pdo;
     private int $processandoTimeoutMinutes;
 
-    public function __construct(string $dbPath, int $processandoTimeoutMinutes = 15)
+    public function __construct(array $dbConfig, int $processandoTimeoutMinutes = 15)
     {
         $this->processandoTimeoutMinutes = $processandoTimeoutMinutes;
-        $dir = dirname($dbPath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        $this->pdo = new PDO('sqlite:' . $dbPath);
+        $dsn = sprintf(
+            'pgsql:host=%s;port=%s;dbname=%s',
+            $dbConfig['host'],
+            $dbConfig['port'],
+            $dbConfig['database']
+        );
+        $this->pdo = new PDO($dsn, $dbConfig['user'], $dbConfig['password']);
         $this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     }
 
@@ -75,7 +77,7 @@ class FilaRepository
             UPDATE fila_itens
             SET status = 'pendente', processado_em = NULL
             WHERE status = 'processando'
-              AND processado_em < datetime('now', '-{$timeout} minutes')
+              AND processado_em < NOW() - INTERVAL '{$timeout} minutes'
         ");
 
         $this->pdo->beginTransaction();
@@ -90,7 +92,7 @@ class FilaRepository
             $this->pdo->commit();
             return null;
         }
-        $this->pdo->prepare("UPDATE fila_itens SET status = 'processando', processado_em = datetime('now') WHERE id = ?")
+        $this->pdo->prepare("UPDATE fila_itens SET status = 'processando', processado_em = NOW() WHERE id = ?")
             ->execute([$row['id']]);
         $this->pdo->commit();
         $row['payload'] = json_decode($row['payload'], true);

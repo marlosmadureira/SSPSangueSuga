@@ -31,7 +31,7 @@ class JwtMiddleware
             return $handler->handle($request);
         } catch (\Throwable $e) {
             $response = new Response();
-            $response->getBody()->write(json_encode(['erro' => 'Token inválido ou expirado']));
+            $response->getBody()->write(json_encode(['erro' => 'Token inválido']));
             return $response->withStatus(401)->withHeader('Content-Type', 'application/json');
         }
     }
