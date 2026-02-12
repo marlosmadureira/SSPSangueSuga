@@ -62,24 +62,56 @@ def _identificador_seguro(nome: str) -> str:
     return s if s else "col"
 
 
+def _parse_schema_tabela(nome_tabela: str) -> tuple:
+    """
+    Interpreta nome_tabela como 'schema.tabela' ou 'tabela'.
+    Retorna (schema, tabela) com identificadores seguros.
+    """
+    s = (nome_tabela or "").strip().replace("[", "").replace("]", "")
+    if not s:
+        return ("public", "tabela")
+    parts = s.split(".", 1)
+    if len(parts) == 2:
+        schema = _identificador_seguro(parts[0].strip()) or "public"
+        tabela = _identificador_seguro(parts[1].strip())
+    else:
+        schema = "public"
+        tabela = _identificador_seguro(parts[0].strip())
+    if not tabela:
+        tabela = "tabela"
+    return (schema, tabela)
+
+
+def _schema_tabela_qualificado(nome_tabela: str) -> str:
+    """Retorna string qualificada para SQL: "schema"."tabela"."""
+    schema, tabela = _parse_schema_tabela(nome_tabela)
+    return f'"{schema}"."{tabela}"'
+
+
 def criar_tabela_se_nao_existe(nome_tabela: str, colunas: List[Dict[str, Any]]) -> bool:
     """
-    Cria a tabela no PostgreSQL se não existir.
+    Cria o schema (se não existir) e a tabela no PostgreSQL (se não existir).
+    nome_tabela pode ser "schema.tabela" ou "tabela" (usa public).
     colunas: lista de dicts com nome, tipo_sqlserver, max_length, numeric_precision, numeric_scale, is_nullable.
     Retorna True se a tabela foi criada, False se já existia.
     """
-    nome_tabela = _identificador_seguro(nome_tabela)
-    if not nome_tabela:
+    schema, tabela = _parse_schema_tabela(nome_tabela)
+    if not tabela:
         raise ValueError("nome_tabela inválido")
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        # Verificar se tabela já existe nesse schema
         cursor.execute("""
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = %s
-        """, (nome_tabela,))
+            WHERE table_schema = %s AND table_name = %s
+        """, (schema, tabela))
         if cursor.fetchone():
             return False  # já existe
+
+        # Criar schema se não existir (exceto public que já existe)
+        if schema != "public":
+            cursor.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
 
         partes = []
         for c in colunas:
@@ -93,21 +125,22 @@ def criar_tabela_se_nao_existe(nome_tabela: str, colunas: List[Dict[str, Any]]) 
             null_str = "" if nullable else " NOT NULL"
             partes.append(f'"{nome_col}" {tipo_pg}{null_str}')
         colunas_sql = ", ".join(partes)
-        sql = f'CREATE TABLE IF NOT EXISTS "{nome_tabela}" ({colunas_sql})'
+        qualificado = _schema_tabela_qualificado(nome_tabela)
+        sql = f'CREATE TABLE IF NOT EXISTS {qualificado} ({colunas_sql})'
         cursor.execute(sql)
         conn.commit()
         return True
 
 
 def tabela_existe(nome_tabela: str) -> bool:
-    """Verifica se a tabela existe no schema public."""
-    nome_tabela = _identificador_seguro(nome_tabela)
+    """Verifica se a tabela existe no schema indicado (ou public)."""
+    schema, tabela = _parse_schema_tabela(nome_tabela)
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("""
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = %s
-        """, (nome_tabela,))
+            WHERE table_schema = %s AND table_name = %s
+        """, (schema, tabela))
         return cursor.fetchone() is not None
 
 
@@ -127,10 +160,11 @@ def _serializar_valor(val: Any) -> Any:
 def inserir_registros_em_tabela(nome_tabela: str, registros: List[Dict[str, Any]]) -> int:
     """
     Insere os registros na tabela. A tabela deve já existir.
+    nome_tabela pode ser "schema.tabela" ou "tabela".
     Retorna a quantidade de linhas inseridas.
     """
-    nome_tabela = _identificador_seguro(nome_tabela)
-    if not nome_tabela or not registros:
+    qualificado = _schema_tabela_qualificado(nome_tabela)
+    if not registros:
         return 0
 
     # Usar as chaves do primeiro registro como colunas (todas devem ter a mesma estrutura)
@@ -138,7 +172,7 @@ def inserir_registros_em_tabela(nome_tabela: str, registros: List[Dict[str, Any]
     colunas_safe = [f'"{_identificador_seguro(c)}"' for c in colunas]
     placeholders = ", ".join(["%s"] * len(colunas))
     colunas_str = ", ".join(colunas_safe)
-    sql = f'INSERT INTO "{nome_tabela}" ({colunas_str}) VALUES ({placeholders})'
+    sql = f'INSERT INTO {qualificado} ({colunas_str}) VALUES ({placeholders})'
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -150,6 +184,6 @@ def inserir_registros_em_tabela(nome_tabela: str, registros: List[Dict[str, Any]
                 inseridos += 1
             except Exception as e:
                 conn.rollback()
-                raise RuntimeError(f"Erro ao inserir na tabela {nome_tabela}: {e}") from e
+                raise RuntimeError(f"Erro ao inserir na tabela {qualificado}: {e}") from e
         conn.commit()
         return inseridos

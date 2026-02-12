@@ -6,6 +6,7 @@ Uso: python sender.py
 """
 import json
 import os
+import re
 import time
 from datetime import date, datetime
 from typing import Any, Iterator, List, Optional, Tuple
@@ -162,9 +163,20 @@ def obter_schema_tabela(conn) -> list:
 
 
 def nome_tabela_postgres() -> str:
-    """Nome da tabela no PostgreSQL (schema_tabela ou tabela, sem caracteres especiais)."""
+    """
+    Nome qualificado para o PostgreSQL: schema.tabela (mesmo do SQL Server, sanitizado).
+    Ex.: SchCADSUS.TIPEND -> SchCADSUS.TIPEND (receiver criará schema SchCADSUS e tabela TIPEND).
+    """
     s = DB_TABLE.replace("[", "").replace("]", "").strip()
-    return s.replace(".", "_").replace(" ", "_") or "tabela"
+    if not s:
+        return "public.tabela"
+    # Manter schema.tabela; só normalizar espaços e caracteres problemáticos por parte
+    parts = s.split(".", 1)
+    safe = lambda x: re.sub(r"[^\w]", "_", x.strip()) if x else ""
+    if len(parts) == 2:
+        schema, tabela = safe(parts[0]) or "public", safe(parts[1]) or "tabela"
+        return f"{schema}.{tabela}"
+    return safe(parts[0]) or "tabela"
 
 
 def enviar_definicao_tabela() -> bool:
