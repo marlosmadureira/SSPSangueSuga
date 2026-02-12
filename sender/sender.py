@@ -8,7 +8,8 @@ import json
 import os
 import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any, Iterator, List, Optional, Tuple
 
 try:
@@ -104,6 +105,44 @@ def serializar_para_estado(val: Any) -> Any:
     if hasattr(val, "isoformat"):
         return val.isoformat()
     return val
+
+
+def serializar_para_json(val: Any) -> Any:
+    """
+    Converte qualquer valor do SQL Server para tipo JSON-serializável.
+    Suporta: date, datetime, time, Decimal, bytes, e tipos aninhados (list, dict).
+    """
+    if val is None:
+        return None
+    if isinstance(val, (datetime, date)):
+        return val.isoformat()
+    if isinstance(val, time):
+        return val.isoformat()
+    if isinstance(val, Decimal):
+        try:
+            return int(val) if val % 1 == 0 else float(val)
+        except (ValueError, TypeError):
+            return str(val)
+    if isinstance(val, bytes):
+        try:
+            return val.decode("utf-8")
+        except Exception:
+            return val.hex()
+    if isinstance(val, dict):
+        return {k: serializar_para_json(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple)):
+        return [serializar_para_json(v) for v in val]
+    if hasattr(val, "isoformat"):
+        return val.isoformat()
+    if isinstance(val, (str, int, float, bool)):
+        return val
+    # UUID, outros objetos -> string
+    return str(val)
+
+
+def serializar_registros_para_json(registros: List[dict]) -> List[dict]:
+    """Converte cada registro (dict) para valores 100% JSON-serializáveis."""
+    return [{k: serializar_para_json(v) for k, v in reg.items()} for reg in registros]
 
 
 def load_state() -> dict:
@@ -285,8 +324,10 @@ def enviar_lote(lote: List[dict], checkpoint_key: str, nome_tabela: Optional[str
         "Authorization": f"Bearer {API_JWT_TOKEN.strip()}",
         "Content-Type": "application/json",
     }
+    # Serializar registros para JSON (date, datetime, Decimal, bytes, etc.)
+    registros_json = serializar_registros_para_json(lote)
     payload = {
-        "registros": lote,
+        "registros": registros_json,
         "total": len(lote),
         "checkpoint_key": checkpoint_key,
     }
