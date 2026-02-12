@@ -167,7 +167,7 @@ async def receber_lote(
 
     # Validação de entrada
     if not registros or not isinstance(registros, list):
-        sendElement(ACCESSTOKEN, SALA, f"Erro 3 -> Nenhum registro no lote"")
+        sendElement(ACCESSTOKEN, SALA, f"Erro 3 -> Nenhum registro no lote")
         raise HTTPException(
             status_code=400, detail="Nenhum registro no lote"
         )
@@ -182,7 +182,7 @@ async def receber_lote(
     # Modo: inserir em tabela no PostgreSQL
     if nome_tabela and nome_tabela.strip():
         if not tabela_existe(nome_tabela.strip()):
-            sendElement(ACCESSTOKEN, SALA, f"Erro 5 -> Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.")
+            sendElement(ACCESSTOKEN, SALA, f"Erro 5 -> Tabela {nome_tabela} não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.")
             raise HTTPException(
                 status_code=400,
                 detail=f"Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.",
@@ -196,7 +196,7 @@ async def receber_lote(
                 duplicado=False,
             )
         except Exception as e:
-            sendElement(ACCESSTOKEN, SALA, f"Erro 6 -> "Erro ao inserir na tabela (POST /api/lotes)")
+            sendElement(ACCESSTOKEN, SALA, f"Erro 6 -> Erro ao inserir na tabela (POST /api/lotes)")
             logging.exception("Erro ao inserir na tabela (POST /api/lotes)")
             raise HTTPException(status_code=500, detail=f"Erro ao inserir na tabela: {str(e)}")
 
