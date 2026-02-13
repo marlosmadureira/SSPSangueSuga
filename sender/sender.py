@@ -38,6 +38,15 @@ from config import (
     STATE_FILE,
 )
 
+# Importar módulo customizado de notificações (opcional)
+try:
+    from sendElement import sendMessageElement
+    SEND_ELEMENT_AVAILABLE = True
+except ImportError:
+    SEND_ELEMENT_AVAILABLE = False
+    def sendMessageElement(*args, **kwargs):
+        pass  # Função vazia se não disponível
+
 
 def print_color(message: str, color_code: int = 0) -> None:
     """Imprime mensagem com código de cor ANSI."""
@@ -86,9 +95,11 @@ def get_connection():
         print_color("✅ Conexão Aberta com sucesso.", 32)
         return conn
     except pymssql.OperationalError as e:
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 1 -> ❌ Erro operacional: {e}")
         print_color(f"❌ Erro operacional: {e}", 31)
         return None
     except pymssql.DatabaseError as e:
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 2 -> ❌ Erro de banco de dados: {e}")
         print_color(f"❌ Erro de banco de dados: {e}", 31)
         return None
 
@@ -158,6 +169,7 @@ def _load_state_file() -> dict:
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 3 -> ❌ Erro ")
         return {}
 
 
@@ -266,6 +278,7 @@ def enviar_definicao_tabela() -> bool:
         conn.close()
         raise e
     if not colunas:
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 4 -> Nenhuma coluna encontrada para a tabela {DB_TABLE}")
         raise Exception(f"Nenhuma coluna encontrada para a tabela {DB_TABLE}")
     # URL do receiver: ex. http://host:8080/api -> http://host:8080/api/tabela/definir
     base = API_BASE_URL.rstrip("/")
@@ -397,9 +410,11 @@ def main():
         enviar_definicao_tabela()
         print(f"Estrutura da tabela '{nome_tabela_pg}' enviada ao receiver (criada se não existir).")
     except requests.RequestException as e:
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 5 -> Aviso: não foi possível definir tabela no receiver: {e}")
         print(f"Aviso: não foi possível definir tabela no receiver: {e}")
         print("Enviando lotes com nome_tabela mesmo assim (receiver insere se a tabela já existir).")
     except Exception as e:
+        sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 6 -> Aviso: erro ao obter/enviar schema: {e}")
         print(f"Aviso: erro ao obter/enviar schema: {e}")
         # Mantém nome_tabela_pg para tentar inserir; se a tabela não existir, o receiver retornará erro.
 
@@ -432,8 +447,10 @@ def main():
         return 1
     except Exception as e:
         if PYMSSQL_AVAILABLE and isinstance(e, (pymssql.OperationalError, pymssql.DatabaseError)):
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 7 -> ❌ Erro no banco: {e}")
             print_color(f"❌ Erro no banco: {e}", 31)
         else:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 8 -> ❌ Erro inesperado: {e}")
             print_color(f"❌ Erro inesperado: {e}", 31)
         return 1
     return 0

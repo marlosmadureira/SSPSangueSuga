@@ -20,6 +20,7 @@ except ImportError:
     SEND_ELEMENT_AVAILABLE = False
     def sendMessageElement(*args, **kwargs):
         pass  # Função vazia se não disponível
+
 from models import (
     LoteRequest,
     LoteResponse,
@@ -93,6 +94,8 @@ async def get_openapi_yaml():
     from fastapi.responses import Response
     yaml_path = os.path.join(os.path.dirname(__file__), "openapi.yaml")
     if not os.path.exists(yaml_path):
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 4 -> Arquivo não encontrado")
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
     
     # Substituir {{BASE_URL}} pelo valor da configuração
