@@ -145,7 +145,13 @@ def serializar_registros_para_json(registros: List[dict]) -> List[dict]:
     return [{k: serializar_para_json(v) for k, v in reg.items()} for reg in registros]
 
 
-def load_state() -> dict:
+def _state_key_tabela() -> str:
+    """Chave única da tabela atual para o arquivo de estado (uma chave por tabela)."""
+    return nome_tabela_postgres()
+
+
+def _load_state_file() -> dict:
+    """Carrega o arquivo de estado completo: { "schema.tabela": { ... }, ... }."""
     if not os.path.isfile(STATE_FILE):
         return {}
     try:
@@ -155,16 +161,28 @@ def load_state() -> dict:
         return {}
 
 
-def save_state(state: dict) -> None:
+def load_state() -> dict:
+    """Retorna o estado apenas da tabela atual (vazio se nunca rodou essa tabela)."""
+    all_states = _load_state_file()
+    return all_states.get(_state_key_tabela(), {})
+
+
+def save_state(state: dict, total_enviados: Optional[int] = None) -> None:
+    """Salva o estado da tabela atual no arquivo único; mantém estado das outras tabelas."""
+    key = _state_key_tabela()
+    all_states = _load_state_file()
+    entry = dict(state)
+    if total_enviados is not None:
+        entry["total_enviados"] = total_enviados
+    all_states[key] = entry
+
     path = STATE_FILE
-    # Arquivo temporário único (evita conflito com outro processo e ajuda no Windows)
     tmp = f"{path}.tmp.{os.getpid()}"
     try:
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=0)
+            json.dump(all_states, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        # No Windows, antivirus/outro processo podem bloquear brevemente; tentar algumas vezes
         for attempt in range(1, 4):
             try:
                 os.replace(tmp, path)
@@ -362,8 +380,13 @@ def main():
         return 1
 
     state = load_state()
+    tabela_key = _state_key_tabela()
     if state:
-        print("Retomando de onde parou (checkpoint anterior encontrado).")
+        total_antes = state.get("total_enviados")
+        msg = f"Retomando tabela '{tabela_key}' de onde parou."
+        if total_antes is not None:
+            msg += f" ({total_antes} registros enviados anteriormente.)"
+        print(msg)
 
     # Nome da tabela no PostgreSQL (para criar/inserir no receiver)
     nome_tabela_pg = nome_tabela_postgres()
@@ -395,9 +418,9 @@ def main():
                     print(f"Falha de conexão (tentativa {attempt}/{RETRY_ATTEMPTS}): {e}. Reagendando em {RETRY_BACKOFF_SECONDS}s...")
                     time_module.sleep(RETRY_BACKOFF_SECONDS)
 
-            save_state(new_state)
             num_lote += 1
             total_enviados += len(lote)
+            save_state(new_state, total_enviados=total_enviados)
             print(f"Lote {num_lote}: {len(lote)} registros enviados (total: {total_enviados})")
 
         print(f"Concluído. Total: {total_enviados} registros em {num_lote} lote(s).")
