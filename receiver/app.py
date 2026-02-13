@@ -4,7 +4,6 @@ API Receiver - Recebe lotes de dados e processa em fila.
 Autenticação via JWT (Bearer).
 """
 
-from sendElement import sendMessageElement
 from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +11,15 @@ from contextlib import asynccontextmanager
 import logging
 import os
 import config
+
+# Importar módulo customizado de notificações (opcional)
+try:
+    from sendElement import sendMessageElement
+    SEND_ELEMENT_AVAILABLE = True
+except ImportError:
+    SEND_ELEMENT_AVAILABLE = False
+    def sendMessageElement(*args, **kwargs):
+        pass  # Função vazia se não disponível
 from models import (
     LoteRequest,
     LoteResponse,
@@ -135,10 +143,12 @@ async def definir_tabela(
             criada=criada,
         )
     except ValueError as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 1 -> {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 1 -> {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 2 -> {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 2 -> {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao criar tabela: {str(e)}")
 
 
@@ -167,22 +177,26 @@ async def receber_lote(
 
     # Validação de entrada
     if not registros or not isinstance(registros, list):
-        sendElement(ACCESSTOKEN, SALA, f"Erro 3 -> Nenhum registro no lote")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 3 -> Nenhum registro no lote")
         raise HTTPException(
             status_code=400, detail="Nenhum registro no lote"
         )
 
     # Limitar tamanho do lote
-    if len(registros) > BATCH_SIZE:
-        sendMessageElement(ACCESSTOKEN, SALA, f"Erro 4 -> Lote muito grande. Máximo {BATCH_SIZE} registros")
+    batch_size = getattr(config, 'BATCH_SIZE', 10000)  # Padrão 10000 se não configurado
+    if len(registros) > batch_size:
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 4 -> Lote muito grande. Máximo {batch_size} registros")
         raise HTTPException(
-            status_code=400, detail="Lote muito grande. Máximo {BATCH_SIZE} registros"
+            status_code=400, detail=f"Lote muito grande. Máximo {batch_size} registros"
         )
 
     # Modo: inserir em tabela no PostgreSQL
     if nome_tabela and nome_tabela.strip():
         if not tabela_existe(nome_tabela.strip()):
-            sendElement(ACCESSTOKEN, SALA, f"Erro 5 -> Tabela {nome_tabela} não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.")
+            if SEND_ELEMENT_AVAILABLE:
+                sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 5 -> Tabela {nome_tabela} não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.")
             raise HTTPException(
                 status_code=400,
                 detail=f"Tabela '{nome_tabela}' não existe. Chame primeiro POST /api/tabela/definir com a estrutura da tabela.",
@@ -196,7 +210,8 @@ async def receber_lote(
                 duplicado=False,
             )
         except Exception as e:
-            sendElement(ACCESSTOKEN, SALA, f"Erro 6 -> Erro ao inserir na tabela (POST /api/lotes)")
+            if SEND_ELEMENT_AVAILABLE:
+                sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 6 -> Erro ao inserir na tabela (POST /api/lotes): {str(e)}")
             logging.exception("Erro ao inserir na tabela (POST /api/lotes)")
             raise HTTPException(status_code=500, detail=f"Erro ao inserir na tabela: {str(e)}")
 
@@ -211,7 +226,8 @@ async def receber_lote(
             duplicado=duplicado,
         )
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 7 -> Erro ao processar lote: {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 7 -> Erro ao processar lote: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar lote: {str(e)}")
 
 
@@ -247,7 +263,8 @@ async def obter_proximo_item(
             payload=item["payload"],
         )
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 8 -> Erro ao processar lote: {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 8 -> Erro ao processar fila: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar fila: {str(e)}")
 
 
@@ -269,7 +286,8 @@ async def marcar_item_processado(
         fila.marcar_item_processado(item_id)
         return {"ok": True}
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 9 -> Erro ao processar lote: {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 9 -> Erro ao marcar item como processado: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
 
 
@@ -285,14 +303,16 @@ async def marcar_item_erro(
 ):
     """Marca item com erro"""
     if item_id <= 0:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 10 -> ID inválido")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 10 -> ID inválido")
         raise HTTPException(status_code=400, detail="ID inválido")
     
     try:
         fila.marcar_item_erro(item_id)
         return {"ok": True}
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 11 -> Erro ao processar: {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 11 -> Erro ao marcar item com erro: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao processar: {str(e)}")
 
 
@@ -311,7 +331,8 @@ async def estatisticas_fila(
         stats = fila.estatisticas()
         return FilaStatsResponse(**stats)
     except Exception as e:
-        sendElement(ACCESSTOKEN, SALA, f"Erro 11 -> Erro ao obter estatísticas: {str(e)}")
+        if SEND_ELEMENT_AVAILABLE:
+            sendMessageElement(config.ACCESSTOKEN, config.SALA, f"Erro 12 -> Erro ao obter estatísticas: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
 
 
